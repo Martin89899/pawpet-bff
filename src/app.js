@@ -8,6 +8,7 @@ require('dotenv').config();
 const { globalAuthMiddleware } = require('./middleware/auth');
 const { errorHandler } = require('./middleware/errorHandler');
 const { logger } = require('./utils/logger');
+const { specs, swaggerUi } = require('./config/swagger');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -44,12 +45,21 @@ app.use('/api', (req, res, next) => {
   return globalAuthMiddleware(req, res, next);
 });
 
+// Documentación Swagger
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
+
 // Health check
 app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'OK', 
     service: 'bff',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    services: {
+      auth: SERVICES.auth,
+      patient: SERVICES.patient,
+      historial: SERVICES.historial,
+      inventory: SERVICES.inventory
+    }
   });
 });
 
