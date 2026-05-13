@@ -35,16 +35,6 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Global auth middleware (except for auth endpoints)
-app.use('/api', (req, res, next) => {
-  // Skip auth for auth endpoints (register, login, etc.)
-  if (req.path.startsWith('/api/auth/') && 
-      (req.path.includes('/register') || req.path.includes('/login') || req.path.includes('/refresh'))) {
-    return next();
-  }
-  return globalAuthMiddleware(req, res, next);
-});
-
 // Documentación Swagger
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
@@ -70,14 +60,60 @@ const authProxy = createProxyMiddleware({
   pathRewrite: {
     '^/api/auth': '/api/auth'
   },
+  // Ensure request body is preserved for POST/PUT/PATCH requests
+  onProxyReq: (proxyReq, req, res) => {
+    // Log the request for debugging
+    logger.info(`Proxying ${req.method} ${req.path} to ${SERVICES.auth}${req.path}`);
+    
+    // Preserve content-type and body
+    if (req.body && Object.keys(req.body).length > 0) {
+      const bodyData = JSON.stringify(req.body);
+      proxyReq.setHeader('Content-Type', 'application/json');
+      proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
+      proxyReq.write(bodyData);
+    }
+  },
+  onProxyRes: (proxyRes, req, res) => {
+    logger.info(`Auth service response: ${proxyRes.statusCode} for ${req.method} ${req.path}`);
+  },
   onError: (err, req, res) => {
     logger.error('Auth service proxy error:', err);
-    res.status(503).json({
+    
+    let message = 'Authentication service temporarily unavailable';
+    let statusCode = 503;
+    
+    if (err.code === 'ECONNREFUSED') {
+      message = 'Authentication service is not responding. Please try again later.';
+    } else if (err.code === 'ETIMEDOUT') {
+      message = 'Authentication service request timed out. Please try again.';
+      statusCode = 504;
+    } else if (err.code === 'ENOTFOUND') {
+      message = 'Authentication service not found. Please contact support.';
+    }
+    
+    res.status(statusCode).json({
       success: false,
-      message: 'Auth service unavailable'
+      message,
+      service: 'authentication'
     });
   }
 });
+
+// Middleware to protect specific routes
+const protectRoute = (req, res, next) => {
+  // Skip auth for public auth routes
+  const publicAuthRoutes = ['/register', '/login', '/refresh'];
+  const pathSegments = req.path.split('/');
+  const lastSegment = pathSegments[pathSegments.length - 1];
+  
+  if (req.path.startsWith('/api/auth/') && publicAuthRoutes.includes('/' + lastSegment)) {
+    logger.info(`Skipping auth for public route: ${req.path}`);
+    return next();
+  }
+  
+  logger.info(`Applying auth middleware to: ${req.path}`);
+  return globalAuthMiddleware(req, res, next);
+};
 
 const patientProxy = createProxyMiddleware({
   target: SERVICES.patient,
@@ -87,9 +123,23 @@ const patientProxy = createProxyMiddleware({
   },
   onError: (err, req, res) => {
     logger.error('Patient service proxy error:', err);
-    res.status(503).json({
+    
+    let message = 'Patient service temporarily unavailable';
+    let statusCode = 503;
+    
+    if (err.code === 'ECONNREFUSED') {
+      message = 'Patient service is not responding. Please try again later.';
+    } else if (err.code === 'ETIMEDOUT') {
+      message = 'Patient service request timed out. Please try again.';
+      statusCode = 504;
+    } else if (err.code === 'ENOTFOUND') {
+      message = 'Patient service not found. Please contact support.';
+    }
+    
+    res.status(statusCode).json({
       success: false,
-      message: 'Patient service unavailable'
+      message,
+      service: 'patients'
     });
   }
 });
@@ -102,9 +152,23 @@ const historialProxy = createProxyMiddleware({
   },
   onError: (err, req, res) => {
     logger.error('Historial service proxy error:', err);
-    res.status(503).json({
+    
+    let message = 'Medical history service temporarily unavailable';
+    let statusCode = 503;
+    
+    if (err.code === 'ECONNREFUSED') {
+      message = 'Medical history service is not responding. Please try again later.';
+    } else if (err.code === 'ETIMEDOUT') {
+      message = 'Medical history service request timed out. Please try again.';
+      statusCode = 504;
+    } else if (err.code === 'ENOTFOUND') {
+      message = 'Medical history service not found. Please contact support.';
+    }
+    
+    res.status(statusCode).json({
       success: false,
-      message: 'Historial service unavailable'
+      message,
+      service: 'medical-history'
     });
   }
 });
@@ -117,18 +181,32 @@ const inventoryProxy = createProxyMiddleware({
   },
   onError: (err, req, res) => {
     logger.error('Inventory service proxy error:', err);
-    res.status(503).json({
+    
+    let message = 'Inventory service temporarily unavailable';
+    let statusCode = 503;
+    
+    if (err.code === 'ECONNREFUSED') {
+      message = 'Inventory service is not responding. Please try again later.';
+    } else if (err.code === 'ETIMEDOUT') {
+      message = 'Inventory service request timed out. Please try again.';
+      statusCode = 504;
+    } else if (err.code === 'ENOTFOUND') {
+      message = 'Inventory service not found. Please contact support.';
+    }
+    
+    res.status(statusCode).json({
       success: false,
-      message: 'Inventory service unavailable'
+      message,
+      service: 'inventory'
     });
   }
 });
 
 // Route proxies
 app.use('/api/auth', authProxy);
-app.use('/api/patients', patientProxy);
-app.use('/api/historial', historialProxy);
-app.use('/api/inventory', inventoryProxy);
+app.use('/api/patients', protectRoute, patientProxy);
+app.use('/api/historial', protectRoute, historialProxy);
+app.use('/api/inventory', protectRoute, inventoryProxy);
 
 // Error handling
 app.use(errorHandler);

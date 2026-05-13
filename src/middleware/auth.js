@@ -51,16 +51,32 @@ const globalAuthMiddleware = async (req, res, next) => {
 
     if (error.code === 'ECONNABORTED') {
       logger.error('Auth service timeout');
+      return res.status(504).json({
+        success: false,
+        message: 'Authentication service request timed out. Please try again later.'
+      });
+    }
+
+    if (error.code === 'ECONNREFUSED') {
+      logger.error('Auth service connection refused');
       return res.status(503).json({
         success: false,
-        message: 'Authentication service timeout'
+        message: 'Authentication service is not responding. Please try again later.'
+      });
+    }
+
+    if (error.code === 'ENOTFOUND') {
+      logger.error('Auth service not found');
+      return res.status(503).json({
+        success: false,
+        message: 'Authentication service not found. Please contact support.'
       });
     }
 
     logger.error('Auth middleware error:', error);
-    return res.status(500).json({
+    return res.status(503).json({
       success: false,
-      message: 'Authentication service unavailable'
+      message: 'Authentication service temporarily unavailable. Please try again later.'
     });
   }
 };

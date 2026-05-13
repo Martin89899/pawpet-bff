@@ -40,7 +40,34 @@ const errorHandler = (err, req, res, next) => {
 
   // Proxy errors
   if (err.code === 'ECONNREFUSED') {
-    const message = 'Service unavailable';
+    const message = 'Service temporarily unavailable. Please try again later.';
+    error = {
+      statusCode: 503,
+      message
+    };
+  }
+
+  // Connection timeout errors
+  if (err.code === 'ETIMEDOUT') {
+    const message = 'Service request timed out. Please try again later.';
+    error = {
+      statusCode: 504,
+      message
+    };
+  }
+
+  // Host not found errors
+  if (err.code === 'ENOTFOUND') {
+    const message = 'Service not found. Please contact support.';
+    error = {
+      statusCode: 503,
+      message
+    };
+  }
+
+  // Connection reset errors
+  if (err.code === 'ECONNRESET') {
+    const message = 'Connection was reset. Please try again.';
     error = {
       statusCode: 503,
       message
